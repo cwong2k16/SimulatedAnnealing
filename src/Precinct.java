@@ -14,7 +14,15 @@ public class Precinct {
 		this.cost = cost;
 	}
 	
+	public int getId(){
+		return this.id;
+	}
+	
 	public float getCost(){
 		return this.cost;
+	}
+	
+	public int[] getNeighbors(){
+		return neighbors;
 	}
 }
