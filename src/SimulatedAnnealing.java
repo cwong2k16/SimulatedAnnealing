@@ -5,16 +5,17 @@ public class SimulatedAnnealing {
 	private double min = 0.0001;
 	private double alpha = 0.9;
 	private List<Precinct> p;
-	private float currCost; // or "old" cost
+	private Precinct currSol;
+	private double currCost; // or "old" cost
 	
 	public SimulatedAnnealing(List<Precinct> p){
 		this.p = p;
 		
-		/* Start off the simulated anneaing algorithm with a randomly chosen precinct */
-		Precinct prec = selectRandomPrecinct(this.p);
+		/* Start off the simulated annealing algorithm with a randomly chosen precinct */
+		currSol = selectRandomPrecinct(this.p);
 		
 		/* Calculate the current cost of precinct by calling the calculateObjFunc */
-		currCost = calculateObjFunc(prec);
+		currCost = calculateObjFunc(currSol);
 	}
 	
 	private float calculateObjFunc(Precinct p) {
@@ -50,15 +51,30 @@ public class SimulatedAnnealing {
 		return prec;
 	}
 	
+	/* Acceptance Probability formula: e * (new - old)/max */
+	public double acceptanceProbability(double oldCost, double newCost, double max){
+		double formula = Math.E * (newCost - oldCost)/max;
+		return max;
+	}
+	
 	/* Main logic of the algorithm */
-	public boolean run(){
+	/* Reference: http://katrinaeg.com/simulated-annealing.html */
+	public SAResult run(){
 		while(max > min){
 			int i = 1;
 			while(i<=100){
-				Precinct newSol = selectRandomPrecinct(p);
+				Precinct newSol = getNeighbor(currSol);
+				double newCost = calculateObjFunc(newSol);
+				double ac = acceptanceProbability(currCost, newCost, max);
+				if(ac > Math.random()){
+					currSol = newSol;
+					currCost = newCost; 
+				}
 				i++;
 			}
 			max *= alpha;
 		}
+		SAResult res = new SAResult(currSol, currCost);
+		return res;
 	}
 }
