@@ -18,6 +18,9 @@ public class Precinct {
 		return this.id;
 	}
 	
+	/* Precinct cost should be based on a formula taking into account user's selected weights and value of
+	 * compactness, political fairness, population, etc.
+	 */
 	public float getCost(){
 		return this.cost;
 	}

@@ -2,9 +2,15 @@ import java.util.HashMap;
 
 public class State {
 	private String name;
-	private int stateID;
+	private StateID stateID;
 	private HashMap<Integer, District> districts;
 	// private VoteData voteData;
+	
+	public State(String name, StateID stateID, HashMap<Integer, District> districts){
+		this.name = name;
+		this.stateID = stateID;
+		this.districts = districts;
+	}
 	
 	public HashMap<Integer, District> getDistricts(){
 		return districts;
