@@ -1,0 +1,8 @@
+
+public enum Ethnicity {
+	AFRICAN_AMERICAN,
+	AMERICAN_INDIAN,
+	ASIAN_AMERICAN,
+	CAUCASIAN, 
+	HISPANIC
+}

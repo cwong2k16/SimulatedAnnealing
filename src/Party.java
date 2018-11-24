@@ -1,0 +1,7 @@
+
+public enum Party {
+	DEMOCRAT,
+	REPUBLICAN, 
+	CONSTITUTION,
+	OTHER
+}
