@@ -1,0 +1,10 @@
+Precinct.class
+Party.class
+State.class
+VoteData.class
+Move.class
+SAResult.class
+StateID.class
+Ethnicity.class
+SimulatedAnnealing.class
+District.class
