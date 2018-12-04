@@ -2,12 +2,16 @@ import java.util.ArrayList;
 import java.util.LinkedList;
 import java.util.List;
 import java.util.Map.Entry;
+import java.util.Random;
 
 import org.json.JSONException;
 import org.json.JSONObject;
 import org.locationtech.jts.geom.Geometry;
 import org.locationtech.jts.io.ParseException;
 import org.locationtech.jts.io.geojson.GeoJsonReader;
+
+//import javax.websocket.Session;
+import java.io.IOException;
 
 import gerrymandering.model.District;
 import gerrymandering.model.Precinct;
@@ -22,9 +26,11 @@ public class SimulatedAnnealing implements Runnable{
 	private GeneratedState gs;
 	private ObjectiveFunction objf = new ObjectiveFunction();
 	private List<Precinct> allPrecincts = new ArrayList<>();
-	private Move move; 
+	private List<District> remainingDistricts = new ArrayList<>();
 	private List<String> moves = new LinkedList<String>(); 
 	private int moveCount = 0;
+	private Random random = new Random();
+	private Session session;
 	
     private Integer populationPrec = 100;
     private Integer compactnessPrec = 100;
@@ -35,44 +41,15 @@ public class SimulatedAnnealing implements Runnable{
     private volatile boolean paused = false;
     private final Object pauseLock = new Object();
 	
-	public SimulatedAnnealing(StateID stateID, Integer populationPrec, Integer compactnessPrec, Integer politicalPrec){
+	public SimulatedAnnealing(StateID stateID, Integer populationPrec, Integer compactnessPrec, Integer politicalPrec, Session session){
 		this.stateID = stateID;
 		this.populationPrec = populationPrec;
 		this.compactnessPrec = compactnessPrec;
 		this.politicalPrec = politicalPrec;
 		this.gs = new GeneratedState(stateID);
 		this.gs.copyAllData();
-			
-		int randDist = (int)(Math.random() * gs.getDistrictList().size()-1);
-		
-		List<District> remainingDistricts = new ArrayList<District>();
-		for(int i = 0; i < gs.getDistrictList().size(); i++){
-			if(i != randDist) {
-				remainingDistricts.add(gs.getDistrictList().get(i));
-			}
-		}
-		
-		for(Entry<Integer, List<Precinct>> entry : gs.getPrecinctData().entrySet()) {
-			List<Precinct> currPrecs = entry.getValue();
-			for(Precinct p: currPrecs) {
-				allPrecincts.add(p);
-			}
-		}
-		boolean districtExists = gs.getDistrictList().get(randDist)!=null;
-//		System.out.println("Line 58 (param values): " + districtExists + " " + gs.getPrecicntList(gs.getDistrictList().get(randDist).getDistrictId()).size()
-//							+" " + remainingDistricts.size());
-		currSol = selectBoundaryPrecinct(gs.getDistrictList().get(randDist), 
-										gs.getPrecicntList(gs.getDistrictList().get(randDist).getDistrictId()),
-										remainingDistricts);
-//		boolean currSolExists = currSol!=null;
-//		System.out.println("Line 64 (return value): " + currSolExists);
-
-		currCost = calculateObjFunc(currSol);
-	}
-	
-	private double calculateObjFunc(Precinct p) {
-		int newObjVal = 0;
-		return newObjVal;
+		this.setupSA();
+        this.session = session;
 	}
 
 	public double acceptanceProbability(double oldCost, double newCost, double max){
@@ -81,6 +58,9 @@ public class SimulatedAnnealing implements Runnable{
 	}
 	
 	public void run(){
+		int selectedDistrict = 0;
+		Precinct selectedPrecinct = null;
+		Move move;
 		double newFairness;
 		while(running) {
 			synchronized (pauseLock){
@@ -100,29 +80,6 @@ public class SimulatedAnnealing implements Runnable{
 				}
 			}
 			/* Reference: http://katrinaeg.com/simulated-annealing.html */
-			Precinct newSol = null;
-			
-			List<Precinct> neighbors = getNeighbors(currSol, allPrecincts);
-			System.out.println("neighbors size: " + neighbors.size());
-			for(Precinct p: neighbors) {
-				if(p.getDistrictId()!=currSol.getDistrictId()) {
-					newSol = p;
-					break;
-				}
-			}
-			double newCost = calculateObjFunc(newSol);
-			double ac = acceptanceProbability(currCost, newCost, max);
-			if(ac > Math.random()){
-				move = new Move(currSol.getPrecinctId(), currSol.getDistrictId(), newSol.getDistrictId());
-                moveCount++;
-                System.out.println(moveCount+" Move Made: " + move.toString());
-				moves.add(move.toString());
-				currSol = newSol;
-				currCost = newCost;
-			}
-			max *= alpha;
-			System.out.println(max);
-			System.out.println(min);
 			if(max<=min){
                 newFairness = ObjectiveFunction.
                         calculateFairnessGeneratedDistrict(this.gs.getDistrictList(),
@@ -132,8 +89,68 @@ public class SimulatedAnnealing implements Runnable{
                         " New Fairness: " + newFairness);
 				this.running = false;
 			}
+			else{
+				selectedDistrict = selectedDistrict();
+				currSol = selectBoundaryPrecinct(gs.getDistrictList().get(selectedDistrict), 
+						gs.getPrecicntList(gs.getDistrictList().get(selectedDistrict).getDistrictId()),
+						remainingDistricts);
+				currCost = ObjectiveFunction.
+				calculateFairnessGeneratedDistrict(this.gs.getDistrictList(),
+				this.gs.getPrecinctData(),
+				populationPrec,compactnessPrec,politicalPrec);
+				List<Precinct> neighbors = getNeighbors(currSol, allPrecincts);
+				for(Precinct p: neighbors) {
+					if(p.getDistrictId()!=currSol.getDistrictId()) {
+						selectedPrecinct = p;
+						break;
+					}
+				}
+				double newCost = ObjectiveFunction.
+	                    calculateFairnessGeneratedDistrict(this.gs.getDistrictList(),
+	                            this.gs.getPrecinctData(),
+	                            populationPrec,compactnessPrec,politicalPrec);
+				double ac = acceptanceProbability(currCost, newCost, max);
+				if(ac > Math.random()){
+					move = makeMove(currSol, currSol.getDistrictId(), selectedPrecinct.getDistrictId());
+                    sendMove(move);
+	                moveCount++;
+	                System.out.println(moveCount+" Move Made: " + move.toString());
+					moves.add(move.toString());
+					allPrecincts.remove(selectedPrecinct);
+					currCost = newCost;
+				}
+			}
+			max *= alpha;
 		}
 	}
+	
+		public int selectedDistrict(){
+			remainingDistricts = new ArrayList<>();
+			int randDist = (int)(random.nextInt(gs.getDistrictList().size()));
+			for(int i = 0; i < gs.getDistrictList().size(); i++){
+				if(i != randDist) {
+					remainingDistricts.add(gs.getDistrictList().get(i));
+				}
+			}
+			return randDist;
+		}
+		
+	    private void sendMove(Move move){
+	        try {
+	            session.getBasicRemote().sendText(move.toString());
+	        } catch (IOException e) {
+	            e.printStackTrace();
+	        }
+	    }
+	
+		public void setupSA(){	
+			for(Entry<Integer, List<Precinct>> entry : gs.getPrecinctData().entrySet()) {
+				List<Precinct> currPrecs = entry.getValue();
+				for(Precinct p: currPrecs) {
+					allPrecincts.add(p);
+				}
+			}
+		}
 	
 	public List<String> getMoves(){
 		return moves;
@@ -273,6 +290,29 @@ public Precinct selectBoundaryPrecinct(District d, List<Precinct> districtPrecin
 			}
 		}
         return realNeighborList;
+    }
+    private Move makeMove(Precinct precinct, Integer fromDistrict, Integer toDistrict) {
+        Move move = new Move(precinct.getPrecinctId(), fromDistrict, toDistrict);
+        precinct.setDistrictId(toDistrict);
+        this.gs.addPrecinct(toDistrict, precinct);
+        return move;
+    }
+    private Move revertMove(Move move){
+        Move reverseMove = new Move(move.getPrecinctID(),move.getToDistrictID(),move.getFromDistrictID());
+        Precinct precinct = this.gs.getPrecinct(reverseMove.getPrecinctID());
+        if (precinct == null){System.out.println("reverMove couldn't find the precinct in generated state.");}
+        precinct.setDistrictId(reverseMove.getToDistrictID());
+        this.gs.removePrecinct(reverseMove.getFromDistrictID(),precinct);
+        this.allPrecincts.add(precinct);
+        return reverseMove;
+    }
+
+    private double temporaryMove(Precinct precinct, Integer fromDistrict, Integer toDistrict){
+        Move move = makeMove(precinct,fromDistrict,toDistrict);
+        double fairness = ObjectiveFunction.calculateFairnessGeneratedDistrict(this.gs.getDistrictList(),
+                this.gs.getPrecinctData(),populationPrec,compactnessPrec,politicalPrec);
+        revertMove(move);
+        return fairness;
     }
 
 }
