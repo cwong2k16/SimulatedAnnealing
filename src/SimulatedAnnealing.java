@@ -53,18 +53,19 @@ public class SimulatedAnnealing implements Runnable{
 	}
 
 	public double acceptanceProbability(double oldCost, double newCost, double max){
-		// if new is better than old, definitely want to move.
+		// if new is better than old, definitely want to move this
 		if(newCost > oldCost){
 			return 1;
 		}
 		
-		// else if new is worse than old, maybe want to move...
-		double formula = Math.exp((newCost - oldCost)/max);	
+		// if new is worse than old, MAYBE want to move this
+		double formula = Math.exp((newCost - oldCost)/max);
 		return formula;
 	}
 	
 	public void run(){
-		int selectedDistrict = 0;
+		int selectedDistrictID = 0;
+		District selectedDistrict = null;
 		Precinct selectedPrecinct = null;
 		Move move;
 		double newFairness;
@@ -96,24 +97,27 @@ public class SimulatedAnnealing implements Runnable{
 				this.running = false;
 			}
 			else{
-				/* Select a district at random */
-				selectedDistrict = selectedDistrict();
+				/* Gets ID of selected district at random */
+				selectedDistrictID = selectedDistrict();
 				
-				/* Select a random boundary precinct from this particular district */
-				currSol = selectBoundaryPrecinct(gs.getDistrictList().get(selectedDistrict), 
-						gs.getPrecicntList(gs.getDistrictList().get(selectedDistrict).getDistrictId()),
+				/* Gets selected district using the random ID */
+				selectedDistrict = gs.getDistrictList().get(selectedDistrictID);
+				
+				/* Select a random boundary precinct using this district */
+				currSol = selectBoundaryPrecinct(selectedDistrict, 
+						gs.getPrecicntList(selectedDistrictID),
 						remainingDistricts);
-				System.out.println(currSol.getPrecinctId());
-				/* This calculates the cost before making the temporary move for the precinct from one district to another */
+				
+				/* Calculate cost before making temp move */
 				currCost = ObjectiveFunction.
 				calculateFairnessGeneratedDistrict(this.gs.getDistrictList(),
 				this.gs.getPrecinctData(),
 				populationPrec,compactnessPrec,politicalPrec);
 				
-				/* Gets a list of neighbors from the selected boundary precinct */
+				/* Gets list of neighbors from the selected boundary precinct */
 				List<Precinct> neighbors = getNeighbors(currSol, allPrecincts);
 				
-				/* Loops through list of neighbors and finds the neighbor with a differing district ID*/
+				/* Loops through list of neighbors and finds the neighbor with a different district ID */
 				for(Precinct p: neighbors) {
 					if(p.getDistrictId()!=currSol.getDistrictId()) {
 						selectedPrecinct = p;
@@ -121,13 +125,24 @@ public class SimulatedAnnealing implements Runnable{
 					}
 				}
 				
+				/* Get the cost after the temporary move */
+				System.out.println("a: " + currSol.getDistrictId() + " " + selectedPrecinct.getDistrictId());
 				double newCost = temporaryMove(currSol, currSol.getDistrictId(), selectedPrecinct.getDistrictId());
+
+				System.out.println("b: " + currSol.getDistrictId() + " " + selectedPrecinct.getDistrictId());
+				/* Run the new cost and the curr cost into the acceptance probability*/
 				double ac = acceptanceProbability(currCost, newCost, max);
 				if(ac > Math.random()){
+	                newFairness = ObjectiveFunction.
+	                        calculateFairnessGeneratedDistrict(this.gs.getDistrictList(),
+	                                this.gs.getPrecinctData(),
+	                                populationPrec,compactnessPrec,politicalPrec);
+	                System.out.println("Old Fairness: " + ObjectiveFunction.databaseStateFairness(stateID) +
+	                        " New Fairness: " + newFairness);
 					move = makeMove(currSol, currSol.getDistrictId(), selectedPrecinct.getDistrictId());
 //                    sendMove(move);
 	                moveCount++;
-//	                System.out.println(moveCount+" Move Made: " + move.toString());
+	                System.out.println(moveCount+" Move Made: " + move.toString());
 					moves.add(move.toString());
 					currCost = newCost;
 				}
@@ -147,6 +162,31 @@ public class SimulatedAnnealing implements Runnable{
 			return randDist;
 		}
 		
+	    private Move makeMove(Precinct precinct, Integer fromDistrict, Integer toDistrict) {
+	        Move move = new Move(precinct.getPrecinctId(), fromDistrict, toDistrict);
+	        precinct.setDistrictId(toDistrict);
+	        this.gs.addPrecinct(toDistrict, precinct);
+	        this.gs.removePrecinct(fromDistrict, precinct);
+			this.allPrecincts.remove(precinct);
+	        return move;
+	    }
+	    private Move revertMove(Move move){
+	        Move reverseMove = new Move(move.getPrecinctID(),move.getToDistrictID(),move.getFromDistrictID());
+	        Precinct precinct = this.gs.getPrecinct(reverseMove.getPrecinctID());
+	        precinct.setDistrictId(reverseMove.getToDistrictID());
+	        this.gs.removePrecinct(reverseMove.getFromDistrictID(),precinct);
+	        this.allPrecincts.add(precinct);
+	        return reverseMove;
+	    }
+
+	    private double temporaryMove(Precinct precinct, Integer fromDistrict, Integer toDistrict){
+	        Move move = makeMove(precinct,fromDistrict,toDistrict);
+	        double fairness = ObjectiveFunction.calculateFairnessGeneratedDistrict(this.gs.getDistrictList(),
+	                this.gs.getPrecinctData(),populationPrec,compactnessPrec,politicalPrec);
+	        revertMove(move);
+	        return fairness;
+	    }
+		
 //	    private void sendMove(Move move){
 //	        try {
 //	            session.getBasicRemote().sendText(move.toString());
@@ -154,7 +194,7 @@ public class SimulatedAnnealing implements Runnable{
 //	            e.printStackTrace();
 //	        }
 //	    }
-	
+//	
 		public void setupSA(){	
 			for(Entry<Integer, List<Precinct>> entry : gs.getPrecinctData().entrySet()) {
 				List<Precinct> currPrecs = entry.getValue();
@@ -303,28 +343,4 @@ public Precinct selectBoundaryPrecinct(District d, List<Precinct> districtPrecin
 		}
         return realNeighborList;
     }
-    private Move makeMove(Precinct precinct, Integer fromDistrict, Integer toDistrict) {
-        Move move = new Move(precinct.getPrecinctId(), fromDistrict, toDistrict);
-        precinct.setDistrictId(toDistrict);
-        this.gs.addPrecinct(toDistrict, precinct);
-		this.allPrecincts.remove(precinct);
-        return move;
-    }
-    private Move revertMove(Move move){
-        Move reverseMove = new Move(move.getPrecinctID(),move.getToDistrictID(),move.getFromDistrictID());
-        Precinct precinct = this.gs.getPrecinct(reverseMove.getPrecinctID());
-        if (precinct == null){System.out.println("reverMove couldn't find the precinct in generated state.");}
-        precinct.setDistrictId(reverseMove.getToDistrictID());
-        this.gs.removePrecinct(reverseMove.getFromDistrictID(),precinct);
-        return reverseMove;
-    }
-
-    private double temporaryMove(Precinct precinct, Integer fromDistrict, Integer toDistrict){
-        Move move = makeMove(precinct,fromDistrict,toDistrict);
-        double fairness = ObjectiveFunction.calculateFairnessGeneratedDistrict(this.gs.getDistrictList(),
-                this.gs.getPrecinctData(),populationPrec,compactnessPrec,politicalPrec);
-        revertMove(move);
-        return fairness;
-    }
-
 }
