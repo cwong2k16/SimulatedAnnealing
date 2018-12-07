@@ -105,7 +105,7 @@ public class SimulatedAnnealing implements Runnable{
 				
 				/* Select a random boundary precinct using this district */
 				currSol = selectBoundaryPrecinct(selectedDistrict, 
-						gs.getPrecicntList(selectedDistrictID),
+						gs.getPrecicntList(gs.getDistrictList().get(selectedDistrictID).getDistrictId()),
 						remainingDistricts);
 				
 				/* Calculate cost before making temp move */
@@ -128,8 +128,6 @@ public class SimulatedAnnealing implements Runnable{
 				/* Get the cost after the temporary move */
 				System.out.println("a: " + currSol.getDistrictId() + " " + selectedPrecinct.getDistrictId());
 				double newCost = temporaryMove(currSol, currSol.getDistrictId(), selectedPrecinct.getDistrictId());
-
-				System.out.println("b: " + currSol.getDistrictId() + " " + selectedPrecinct.getDistrictId());
 				/* Run the new cost and the curr cost into the acceptance probability*/
 				double ac = acceptanceProbability(currCost, newCost, max);
 				if(ac > Math.random()){
@@ -164,17 +162,18 @@ public class SimulatedAnnealing implements Runnable{
 		
 	    private Move makeMove(Precinct precinct, Integer fromDistrict, Integer toDistrict) {
 	        Move move = new Move(precinct.getPrecinctId(), fromDistrict, toDistrict);
+	        this.gs.removePrecinct(fromDistrict, precinct);
 	        precinct.setDistrictId(toDistrict);
 	        this.gs.addPrecinct(toDistrict, precinct);
-	        this.gs.removePrecinct(fromDistrict, precinct);
 			this.allPrecincts.remove(precinct);
 	        return move;
 	    }
 	    private Move revertMove(Move move){
 	        Move reverseMove = new Move(move.getPrecinctID(),move.getToDistrictID(),move.getFromDistrictID());
+	        System.out.println("b: " + reverseMove.getToDistrictID() + " " + reverseMove.getFromDistrictID());
 	        Precinct precinct = this.gs.getPrecinct(reverseMove.getPrecinctID());
 	        precinct.setDistrictId(reverseMove.getToDistrictID());
-	        this.gs.removePrecinct(reverseMove.getFromDistrictID(),precinct);
+//	        this.gs.removePrecinct(reverseMove.getFromDistrictID(),precinct);
 	        this.allPrecincts.add(precinct);
 	        return reverseMove;
 	    }
