@@ -4,6 +4,9 @@ import java.util.List;
 import java.util.Map.Entry;
 import java.util.Random;
 
+import java.io.IOException;
+import javax.websocket.Session;
+
 import org.json.JSONException;
 import org.json.JSONObject;
 import org.locationtech.jts.geom.Geometry;
@@ -31,6 +34,7 @@ public class SimulatedAnnealing implements Runnable{
 	private Random random = new Random();
 	private PrecisionModel pm = new PrecisionModel(10);
 	private GeometryPrecisionReducer reducer = new GeometryPrecisionReducer(pm);
+	private Session session;
 	
     private Integer populationPrec = 100;
     private Integer compactnessPrec = 100;
@@ -41,7 +45,7 @@ public class SimulatedAnnealing implements Runnable{
     private volatile boolean paused = false;
     private final Object pauseLock = new Object();
 	
-	public SimulatedAnnealing(StateID stateID, Integer populationPrec, Integer compactnessPrec, Integer politicalPrec){
+	public SimulatedAnnealing(StateID stateID, Integer populationPrec, Integer compactnessPrec, Integer politicalPrec, Session session){
 		this.stateID = stateID;
 		this.populationPrec = populationPrec;
 		this.compactnessPrec = compactnessPrec;
@@ -49,7 +53,7 @@ public class SimulatedAnnealing implements Runnable{
 		this.gs = new GeneratedState(stateID);
 		this.gs.copyAllData();
 		this.setupSA();
-//        this.session = session;
+        this.session = session;
 	}
 
 	public double acceptanceProbability(double oldCost, double newCost, double max){
@@ -135,7 +139,7 @@ public class SimulatedAnnealing implements Runnable{
 						
 						if(ac > Math.random()){
 							move = makeMove(currSol, currSol.getDistrictId(), selectedPrecinct.getDistrictId());
-		//                    sendMove(move);
+		                    sendMove(move);
 							
 			                newFairness = ObjectiveFunction.
 			                        calculateFairnessGeneratedDistrict(this.gs.getDistrictList(),
@@ -190,13 +194,13 @@ public class SimulatedAnnealing implements Runnable{
 	        return fairness;
 	    }
 		
-//	    private void sendMove(Move move){
-//	        try {
-//	            session.getBasicRemote().sendText(move.toString());
-//	        } catch (IOException e) {
-//	            e.printStackTrace();
-//	        }
-//	    }
+	    private void sendMove(Move move){
+	        try {
+	            session.getBasicRemote().sendText(move.toString());
+	        } catch (IOException e) {
+	            e.printStackTrace();
+	        }
+	    }
 	
 		public void setupSA(){	
 			for(Entry<Integer, List<Precinct>> entry : gs.getPrecinctData().entrySet()) {
@@ -279,7 +283,7 @@ public Precinct selectBoundaryPrecinct(District d, List<Precinct> districtPrecin
 //			System.out.println("hi: " + pbi.getBoundary());
 			pbi = reducer.reduce(pbi).buffer(0);
 //			System.out.println("bye: " + pbi.getBoundary());
-			if(pbi.intersects(reducer.reduce(dbi))) {
+			if(pbi.intersects(reducer.reduce(dbi).buffer(0))) {
 				for (District d1 : remainingDistricts) {
 						rdb = d1.getBoundary();
 						try {
@@ -295,7 +299,7 @@ public Precinct selectBoundaryPrecinct(District d, List<Precinct> districtPrecin
 						} catch (ParseException e) {
 							e.printStackTrace();
 						}
-						if(pbi.intersects(reducer.reduce(rdbi)))
+						if(pbi.intersects(reducer.reduce(rdbi).buffer(0)))
 						return p;
 				}
 			}
@@ -323,6 +327,7 @@ public Precinct selectBoundaryPrecinct(District d, List<Precinct> districtPrecin
 		}
 		try {
 			bpi = reader.read(bps);
+//			bpi = reducer.reduce(bpi).buffer(0);
 		} catch (ParseException e1) {
 			e1.printStackTrace();
 		}
@@ -339,6 +344,7 @@ public Precinct selectBoundaryPrecinct(District d, List<Precinct> districtPrecin
 			}
 			try {
 				 pbi = reader.read(pbs);
+//				 pbi = reducer.reduce(pbi).buffer(0);
 //					System.out.println("printing pbi   "+ pbi.toString());
 			} catch (ParseException e) {
 				e.printStackTrace();
