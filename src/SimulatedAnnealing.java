@@ -7,30 +7,30 @@ import java.util.Random;
 import org.json.JSONException;
 import org.json.JSONObject;
 import org.locationtech.jts.geom.Geometry;
+import org.locationtech.jts.geom.PrecisionModel;
 import org.locationtech.jts.io.ParseException;
 import org.locationtech.jts.io.geojson.GeoJsonReader;
-
-//import javax.websocket.Session;
-import java.io.IOException;
+import org.locationtech.jts.precision.GeometryPrecisionReducer;
 
 import gerrymandering.model.District;
 import gerrymandering.model.Precinct;
 
 public class SimulatedAnnealing implements Runnable{
 	private StateID stateID;
-	private double max = 1.0;
-	private double min = 0.0001;
+	private double max = .10;
+	private double min = 0.00001;
 	private double alpha = 0.9;
 	private Precinct currSol;
 	private double currCost; 
 	private GeneratedState gs;
 	private ObjectiveFunction objf = new ObjectiveFunction();
 	private List<Precinct> allPrecincts = new ArrayList<>();
-	private List<District> remainingDistricts = new ArrayList<>();
+	private List<District> remainingDistricts;
 	private List<String> moves = new LinkedList<String>(); 
 	private int moveCount = 0;
 	private Random random = new Random();
-//	private Session session;
+	private PrecisionModel pm = new PrecisionModel(10);
+	private GeometryPrecisionReducer reducer = new GeometryPrecisionReducer(pm);
 	
     private Integer populationPrec = 100;
     private Integer compactnessPrec = 100;
@@ -53,12 +53,12 @@ public class SimulatedAnnealing implements Runnable{
 	}
 
 	public double acceptanceProbability(double oldCost, double newCost, double max){
-		// if new is better than old, definitely want to move this
-		if(newCost > oldCost){
-			return 1;
+		// if new > old, definitely move
+		if(newCost>oldCost){
+			return 1.0;
 		}
 		
-		// if new is worse than old, MAYBE want to move this
+		// if new < old, maybe move...
 		double formula = Math.exp((newCost - oldCost)/max);
 		return formula;
 	}
@@ -108,44 +108,53 @@ public class SimulatedAnnealing implements Runnable{
 						gs.getPrecicntList(gs.getDistrictList().get(selectedDistrictID).getDistrictId()),
 						remainingDistricts);
 				
-				/* Calculate cost before making temp move */
-				currCost = ObjectiveFunction.
-				calculateFairnessGeneratedDistrict(this.gs.getDistrictList(),
-				this.gs.getPrecinctData(),
-				populationPrec,compactnessPrec,politicalPrec);
+				if(currSol!=null){
 				
-				/* Gets list of neighbors from the selected boundary precinct */
-				List<Precinct> neighbors = getNeighbors(currSol, allPrecincts);
-				
-				/* Loops through list of neighbors and finds the neighbor with a different district ID */
-				for(Precinct p: neighbors) {
-					if(p.getDistrictId()!=currSol.getDistrictId()) {
-						selectedPrecinct = p;
-						break;
+					/* Calculate cost before making temp move */
+					currCost = ObjectiveFunction.
+					calculateFairnessGeneratedDistrict(this.gs.getDistrictList(),
+					this.gs.getPrecinctData(),
+					populationPrec,compactnessPrec,politicalPrec);
+					
+					/* Gets list of neighbors from the selected boundary precinct */
+					List<Precinct> neighbors = getNeighbors(currSol, allPrecincts);
+					
+					/* Loops through list of neighbors and finds neighbor with different district ID */
+					for(Precinct p: neighbors) {
+						if(p.getDistrictId()!=currSol.getDistrictId()) {
+							selectedPrecinct = p;
+							break;
+						}
 					}
-				}
-				
-				/* Get the cost after the temporary move */
-				System.out.println("a: " + currSol.getDistrictId() + " " + selectedPrecinct.getDistrictId());
-				double newCost = temporaryMove(currSol, currSol.getDistrictId(), selectedPrecinct.getDistrictId());
-				/* Run the new cost and the curr cost into the acceptance probability*/
-				double ac = acceptanceProbability(currCost, newCost, max);
-				if(ac > Math.random()){
-	                newFairness = ObjectiveFunction.
-	                        calculateFairnessGeneratedDistrict(this.gs.getDistrictList(),
-	                                this.gs.getPrecinctData(),
-	                                populationPrec,compactnessPrec,politicalPrec);
-	                System.out.println("Old Fairness: " + ObjectiveFunction.databaseStateFairness(stateID) +
-	                        " New Fairness: " + newFairness);
-					move = makeMove(currSol, currSol.getDistrictId(), selectedPrecinct.getDistrictId());
-//                    sendMove(move);
-	                moveCount++;
-	                System.out.println(moveCount+" Move Made: " + move.toString());
-					moves.add(move.toString());
-					currCost = newCost;
+					
+					/* Get the cost after the temporary move */
+					if(selectedPrecinct!=null){
+						double newCost = temporaryMove(currSol, currSol.getDistrictId(), selectedPrecinct.getDistrictId());
+						double ac = acceptanceProbability(currCost, newCost, max);
+						System.out.println("Move from: " + currSol.getDistrictId() + " to " + selectedPrecinct.getDistrictId());
+						
+						if(ac > Math.random()){
+							move = makeMove(currSol, currSol.getDistrictId(), selectedPrecinct.getDistrictId());
+		//                    sendMove(move);
+							
+			                newFairness = ObjectiveFunction.
+			                        calculateFairnessGeneratedDistrict(this.gs.getDistrictList(),
+			                                this.gs.getPrecinctData(),
+			                                populationPrec,compactnessPrec,politicalPrec);
+			                System.out.println("Old Fairness: " + ObjectiveFunction.databaseStateFairness(stateID) +
+			                        " New Fairness: " + newFairness);
+							
+			                moveCount++;
+			                System.out.println(moveCount+" Move Made: " + move.toString());
+							moves.add(move.toString());
+							currCost = newCost;
+						}
+					}
 				}
 			}
 			max *= alpha;
+			System.out.println("max: " + max);
+			System.out.println("min: " + min);
 		}
 	}
 	
@@ -165,24 +174,19 @@ public class SimulatedAnnealing implements Runnable{
 	        this.gs.removePrecinct(fromDistrict, precinct);
 	        precinct.setDistrictId(toDistrict);
 	        this.gs.addPrecinct(toDistrict, precinct);
-			this.allPrecincts.remove(precinct);
 	        return move;
 	    }
-	    private Move revertMove(Move move){
-	        Move reverseMove = new Move(move.getPrecinctID(),move.getToDistrictID(),move.getFromDistrictID());
-	        System.out.println("b: " + reverseMove.getToDistrictID() + " " + reverseMove.getFromDistrictID());
-	        Precinct precinct = this.gs.getPrecinct(reverseMove.getPrecinctID());
-	        precinct.setDistrictId(reverseMove.getToDistrictID());
-//	        this.gs.removePrecinct(reverseMove.getFromDistrictID(),precinct);
-	        this.allPrecincts.add(precinct);
-	        return reverseMove;
+	    private void revertMove(Move move, Precinct precinct, Integer fromDistrict, Integer toDistrict){
+	    	makeMove(precinct, toDistrict, fromDistrict);
+	        precinct.setDistrictId(fromDistrict);
+	        this.gs.removePrecinct(toDistrict,precinct);
 	    }
 
 	    private double temporaryMove(Precinct precinct, Integer fromDistrict, Integer toDistrict){
 	        Move move = makeMove(precinct,fromDistrict,toDistrict);
 	        double fairness = ObjectiveFunction.calculateFairnessGeneratedDistrict(this.gs.getDistrictList(),
 	                this.gs.getPrecinctData(),populationPrec,compactnessPrec,politicalPrec);
-	        revertMove(move);
+	        revertMove(move, precinct, fromDistrict, toDistrict);
 	        return fairness;
 	    }
 		
@@ -193,7 +197,7 @@ public class SimulatedAnnealing implements Runnable{
 //	            e.printStackTrace();
 //	        }
 //	    }
-//	
+	
 		public void setupSA(){	
 			for(Entry<Integer, List<Precinct>> entry : gs.getPrecinctData().entrySet()) {
 				List<Precinct> currPrecs = entry.getValue();
@@ -272,7 +276,10 @@ public Precinct selectBoundaryPrecinct(District d, List<Precinct> districtPrecin
 			}
 /******  Remaining District Geometry ******/
 			/******  If Precinct is a boundary precinct compare with Remaining District Geometry ******/
-			if(pbi.intersects(dbi)) {
+//			System.out.println("hi: " + pbi.getBoundary());
+			pbi = reducer.reduce(pbi).buffer(0);
+//			System.out.println("bye: " + pbi.getBoundary());
+			if(pbi.intersects(reducer.reduce(dbi))) {
 				for (District d1 : remainingDistricts) {
 						rdb = d1.getBoundary();
 						try {
@@ -288,7 +295,7 @@ public Precinct selectBoundaryPrecinct(District d, List<Precinct> districtPrecin
 						} catch (ParseException e) {
 							e.printStackTrace();
 						}
-						if(pbi.intersects(rdbi))
+						if(pbi.intersects(reducer.reduce(rdbi)))
 						return p;
 				}
 			}
