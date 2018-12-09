@@ -9,8 +9,8 @@ import java.util.Map;
 import java.util.Map.Entry;
 import java.util.Random;
 
-import java.io.IOException;
-import javax.websocket.Session;
+//import java.io.IOException;
+//import javax.websocket.Session;
 
 import org.json.JSONException;
 import org.json.JSONObject;
@@ -27,8 +27,8 @@ import gerrymandering.model.Precinct;
 
 public class SimulatedAnnealing implements Runnable{
 	private StateID stateID;
-	private double max = .10;
-	private double min = 0.00001;
+	private double max = 10;
+	private double min = 0.00000000000000000000000000000000000000000000000000000000000000001;
 	private double alpha = 0.9;
 	private Precinct currSol;
 	private double currCost; 
@@ -42,7 +42,9 @@ public class SimulatedAnnealing implements Runnable{
 	private PrecisionModel pm = new PrecisionModel(100);
 	private GeometryPrecisionReducer reducer = new GeometryPrecisionReducer(pm);
 	private Map<Integer,List> neighbors;
-	private Session session;
+	private Map<Integer, List> boundaries;
+	private final int clusterNumber = 10;
+//	private Session session;
 	
     private Integer populationPrec = 100;
     private Integer compactnessPrec = 100;
@@ -53,7 +55,7 @@ public class SimulatedAnnealing implements Runnable{
     private volatile boolean paused = false;
     private final Object pauseLock = new Object();
 	
-	public SimulatedAnnealing(StateID stateID, Integer populationPrec, Integer compactnessPrec, Integer politicalPrec, Session session){
+	public SimulatedAnnealing(StateID stateID, Integer populationPrec, Integer compactnessPrec, Integer politicalPrec){
 		this.stateID = stateID;
 		this.populationPrec = populationPrec;
 		this.compactnessPrec = compactnessPrec;
@@ -61,7 +63,7 @@ public class SimulatedAnnealing implements Runnable{
 		this.gs = new GeneratedState(stateID);
 		this.gs.copyAllData();
 		this.setupSA(stateID);
-        this.session = session;
+//        this.session = session;
 	}
 
 	public double acceptanceProbability(double oldCost, double newCost, double max){
@@ -80,7 +82,7 @@ public class SimulatedAnnealing implements Runnable{
 		District selectedDistrict = null;
 		Precinct selectedPrecinct = null;
 		Move move;
-		double newFairness;
+		double newFairness = 0;
 		while(running) {
 			synchronized (pauseLock){
 				if(!running) {
@@ -99,7 +101,7 @@ public class SimulatedAnnealing implements Runnable{
 				}
 			}
 			/* Reference: http://katrinaeg.com/simulated-annealing.html */
-			if(max<=min){
+			if(max<min){
                 newFairness = ObjectiveFunction.
                         calculateFairnessGeneratedDistrict(this.gs.getDistrictList(),
                                 this.gs.getPrecinctData(),
@@ -115,10 +117,14 @@ public class SimulatedAnnealing implements Runnable{
 				/* Gets selected district using the random ID */
 				selectedDistrict = gs.getDistrictList().get(selectedDistrictID);
 				
+//				clusteringSolution(selectedDistrict);
+				
 				/* Select a random boundary precinct using this district */
-				currSol = selectBoundaryPrecinct(selectedDistrict, 
-						gs.getPrecicntList(gs.getDistrictList().get(selectedDistrictID).getDistrictId()),
-						remainingDistricts);
+				List<Integer> precincts = getBoundaries(selectedDistrict);
+				currSol = this.gs.getPrecinct(precincts.get(random.nextInt(precincts.size())));
+//				currSol = selectBoundaryPrecinct(selectedDistrict, 
+//						gs.getPrecicntList(gs.getDistrictList().get(selectedDistrictID).getDistrictId()),
+//						remainingDistricts);
 				if(currSol!=null){
 				
 					/* Calculate cost before making temp move */
@@ -142,20 +148,20 @@ public class SimulatedAnnealing implements Runnable{
 					if(selectedPrecinct!=null && currSol.getDistrictId()!=selectedPrecinct.getDistrictId()){
 						double newCost = temporaryMove(currSol, currSol.getDistrictId(), selectedPrecinct.getDistrictId());
 						double ac = acceptanceProbability(currCost, newCost, max);
-						System.out.println("Move from: " + currSol.getDistrictId() + " to " + selectedPrecinct.getDistrictId());
-						System.out.println(ac);
-						double rand = Math.random();
-						System.out.println(rand);
+//						System.out.println("Move from: " + currSol.getDistrictId() + " to " + selectedPrecinct.getDistrictId());
 						if(ac > Math.random()){
+							boundaries.get("" + selectedPrecinct.getDistrictId()).add(currSol.getPrecinctId());
+							boundaries.get("" + currSol.getDistrictId()).remove(
+									boundaries.get("" + currSol.getDistrictId()).indexOf(currSol.getPrecinctId()));
 							move = makeMove(currSol, currSol.getDistrictId(), selectedPrecinct.getDistrictId());
-		                    sendMove(move);
+//		                    sendMove(move);
 							
 			                newFairness = ObjectiveFunction.
 			                        calculateFairnessGeneratedDistrict(this.gs.getDistrictList(),
 			                                this.gs.getPrecinctData(),
 			                                populationPrec,compactnessPrec,politicalPrec);
-			                System.out.println("Old Fairness: " + ObjectiveFunction.databaseStateFairness(stateID) +
-			                        " New Fairness: " + newFairness);
+//			                System.out.println("Old Fairness: " + ObjectiveFunction.databaseStateFairness(stateID) +
+//			                        " New Fairness: " + newFairness);
 							
 			                moveCount++;
 			                System.out.println(moveCount+" Move Made: " + move.toString());
@@ -166,8 +172,10 @@ public class SimulatedAnnealing implements Runnable{
 				}
 			}
 			max *= alpha;
-			System.out.println("max: " + max);
-			System.out.println("min: " + min);
+//			System.out.println("max: " + max);
+//			System.out.println("min: " + min);
+//			System.out.println(moveCount);
+//			System.out.println(newFairness);
 		}
 	}
 	
@@ -201,15 +209,52 @@ public class SimulatedAnnealing implements Runnable{
 	        revertMove(move, precinct, fromDistrict, toDistrict);
 	        return fairness;
 	    }
-		
-	    private void sendMove(Move move){
-	        try {
-	            session.getBasicRemote().sendText(move.toString());
-	        } catch (IOException e) {
-	            e.printStackTrace();
-	        }
+	    
+	    /* This generates 10 boundary precincts and returns the highest temporary move */
+	    private Precinct clusteringSolution(District selectedDistrict){
+	    	Precinct bestSolution = null; // return this precinct, should have the highest cost
+	    	Precinct swapPrecinct = null; // bordering precinct with different district ID
+	    	double highestCost = 0;
+			
+	    	for(int i = 0; i < clusterNumber; i++){
+				currSol = selectBoundaryPrecinct(selectedDistrict, 
+						gs.getPrecicntList(selectedDistrict.getDistrictId()),
+						remainingDistricts);
+				if(currSol!=null){
+				
+				/* Gets list of neighbors from the selected boundary precinct */
+				List<Integer> neighbors = getNeighbors(currSol, allPrecincts);
+				
+					/* Loops through list of neighbors and finds neighbor with different district ID */
+					for(Integer p: neighbors) {
+						if(this.gs.getPrecinct(p).getDistrictId() != currSol.getDistrictId()) {
+							swapPrecinct = this.gs.getPrecinct(p);
+							break;
+						}
+					}
+				
+					/* Get the cost after the temporary move */
+					if(swapPrecinct!=null && currSol.getDistrictId()!=swapPrecinct.getDistrictId()){
+						double newCost = temporaryMove(currSol, currSol.getDistrictId(), swapPrecinct.getDistrictId());
+						if (newCost > highestCost){
+							highestCost = newCost;
+							bestSolution = currSol;
+						}
+					}
+				}	
+	    	}
+	    	
+	    	return bestSolution;
 	    }
-	
+		
+//	    private void sendMove(Move move){
+//	        try {
+//	            session.getBasicRemote().sendText(move.toString());
+//	        } catch (IOException e) {
+//	            e.printStackTrace();
+//	        }
+//	    }
+//	
 	public void setupSA(StateID stateID){	
 		for(Entry<Integer, List<Precinct>> entry : gs.getPrecinctData().entrySet()) {
 			List<Precinct> currPrecs = entry.getValue();
@@ -227,23 +272,31 @@ public class SimulatedAnnealing implements Runnable{
 		else if(StateID.IA == stateID){
 			state = "Iowa";
 		}
-		byte[] mapData = null;
+		byte[] mapData = null; // this is for neighbors, format = {122: [123,124], 137: [138, 139]}; 
+		byte[] mapData2 = null; // this is for boundary precincts, format = same as above
 		
 		try {
-			mapData = Files.readAllBytes(Paths.get("c://users//c/workspace//CSE308//src//" + state + ".json"));
+			mapData = Files.readAllBytes(Paths.get("c://users//c//workspace//CSE308//src//" + state + ".json"));
+			mapData2 = Files.readAllBytes(Paths.get("c://users//c//workspace//CSE308//src//" + state + "Bp.json"));
 		} catch (IOException e1) {
 			// TODO Auto-generated catch block
 			e1.printStackTrace();
 		}
 		
 		neighbors = new HashMap<>();
+		boundaries = new HashMap<>();
 		ObjectMapper objectMapper = new ObjectMapper();
 		try {
 			neighbors = objectMapper.readValue(mapData, HashMap.class);
+			boundaries = objectMapper.readValue(mapData2, HashMap.class);
 		} catch (IOException e) {
 			// TODO Auto-generated catch block
 			e.printStackTrace();
 		}
+//		for(Map.Entry<Integer, List> item: boundaries.entrySet()){
+//			System.out.println(item.getValue().size());
+//		}
+//		System.exit(0);
 	}
 	
 	public List<String> getMoves(){
@@ -341,6 +394,10 @@ public Precinct selectBoundaryPrecinct(District d, List<Precinct> districtPrecin
 		return null;
     }
     
+	public List<Integer> getBoundaries(District district){
+		return boundaries.get("" + district.getDistrictId());
+	}
+
     public List<Integer> getNeighbors(Precinct boundaryPrecinct, List<Precinct> allPrecincts){
     	
     	return neighbors.get("" + boundaryPrecinct.getPrecinctId());
