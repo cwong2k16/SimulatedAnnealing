@@ -9,8 +9,8 @@ import java.util.Map;
 import java.util.Map.Entry;
 import java.util.Random;
 
-//import java.io.IOException;
-//import javax.websocket.Session;
+import java.io.IOException;
+import javax.websocket.Session;
 
 import org.json.JSONException;
 import org.json.JSONObject;
@@ -35,14 +35,14 @@ public class SimulatedAnnealing implements Runnable{
 	private GeneratedState gs;
 	private ObjectiveFunction objf = new ObjectiveFunction();
 	private List<Precinct> allPrecincts = new ArrayList<>();
-	private List<District> remainingDistricts;
+	private List<District> remainingDistricts = new ArrayList<>();
 	private List<String> moves = new LinkedList<String>(); 
 	private int moveCount = 0;
 	private Random random = new Random();
 	private PrecisionModel pm = new PrecisionModel(100);
 	private GeometryPrecisionReducer reducer = new GeometryPrecisionReducer(pm);
 	private Map<Integer,List> neighbors;
-//	private Session session;
+	private Session session;
 	
     private Integer populationPrec = 100;
     private Integer compactnessPrec = 100;
@@ -53,7 +53,7 @@ public class SimulatedAnnealing implements Runnable{
     private volatile boolean paused = false;
     private final Object pauseLock = new Object();
 	
-	public SimulatedAnnealing(StateID stateID, Integer populationPrec, Integer compactnessPrec, Integer politicalPrec){
+	public SimulatedAnnealing(StateID stateID, Integer populationPrec, Integer compactnessPrec, Integer politicalPrec, Session session){
 		this.stateID = stateID;
 		this.populationPrec = populationPrec;
 		this.compactnessPrec = compactnessPrec;
@@ -61,7 +61,7 @@ public class SimulatedAnnealing implements Runnable{
 		this.gs = new GeneratedState(stateID);
 		this.gs.copyAllData();
 		this.setupSA(stateID);
-//        this.session = session;
+        this.session = session;
 	}
 
 	public double acceptanceProbability(double oldCost, double newCost, double max){
@@ -143,10 +143,12 @@ public class SimulatedAnnealing implements Runnable{
 						double newCost = temporaryMove(currSol, currSol.getDistrictId(), selectedPrecinct.getDistrictId());
 						double ac = acceptanceProbability(currCost, newCost, max);
 						System.out.println("Move from: " + currSol.getDistrictId() + " to " + selectedPrecinct.getDistrictId());
-						
+						System.out.println(ac);
+						double rand = Math.random();
+						System.out.println(rand);
 						if(ac > Math.random()){
 							move = makeMove(currSol, currSol.getDistrictId(), selectedPrecinct.getDistrictId());
-//		                    sendMove(move);
+		                    sendMove(move);
 							
 			                newFairness = ObjectiveFunction.
 			                        calculateFairnessGeneratedDistrict(this.gs.getDistrictList(),
@@ -170,7 +172,7 @@ public class SimulatedAnnealing implements Runnable{
 	}
 	
 		public int selectedDistrict(){
-			remainingDistricts = new ArrayList<>();
+			remainingDistricts.clear();
 			int randDist = (int)(random.nextInt(gs.getDistrictList().size()));
 			for(int i = 0; i < gs.getDistrictList().size(); i++){
 				if(i != randDist) {
@@ -187,6 +189,7 @@ public class SimulatedAnnealing implements Runnable{
 	        this.gs.addPrecinct(toDistrict, precinct);
 	        return move;
 	    }
+	    
 	    private void revertMove(Move move, Precinct precinct, Integer fromDistrict, Integer toDistrict){
 	    	makeMove(precinct, toDistrict, fromDistrict);
 	    }
@@ -199,13 +202,13 @@ public class SimulatedAnnealing implements Runnable{
 	        return fairness;
 	    }
 		
-//	    private void sendMove(Move move){
-//	        try {
-//	            session.getBasicRemote().sendText(move.toString());
-//	        } catch (IOException e) {
-//	            e.printStackTrace();
-//	        }
-//	    }
+	    private void sendMove(Move move){
+	        try {
+	            session.getBasicRemote().sendText(move.toString());
+	        } catch (IOException e) {
+	            e.printStackTrace();
+	        }
+	    }
 	
 	public void setupSA(StateID stateID){	
 		for(Entry<Integer, List<Precinct>> entry : gs.getPrecinctData().entrySet()) {
