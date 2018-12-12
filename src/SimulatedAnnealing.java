@@ -27,8 +27,8 @@ import gerrymandering.model.Precinct;
 
 public class SimulatedAnnealing implements Runnable{
 	private StateID stateID;
-	private double max = 10;
-	private double min = 0.00000000000000000000000000000000000000000000000000000000000000001;
+	private double max = .10;
+	private float min = 0.000000000000000000000000000000000000001f;
 	private double alpha = 0.9;
 	private Precinct currSol;
 	private double currCost; 
@@ -44,6 +44,7 @@ public class SimulatedAnnealing implements Runnable{
 	private Map<Integer,List> neighbors;
 	private Map<Integer, List> boundaries;
 	private final int clusterNumber = 10;
+	private boolean useSecondVariant = false;
 //	private Session session;
 	
     private Integer populationPrec = 100;
@@ -81,7 +82,7 @@ public class SimulatedAnnealing implements Runnable{
 		int selectedDistrictID = 0;
 		District selectedDistrict = null;
 		Precinct selectedPrecinct = null;
-		Move move;
+		Move move = null;
 		double newFairness = 0;
 		while(running) {
 			synchronized (pauseLock){
@@ -153,6 +154,20 @@ public class SimulatedAnnealing implements Runnable{
 							boundaries.get("" + selectedPrecinct.getDistrictId()).add(currSol.getPrecinctId());
 							boundaries.get("" + currSol.getDistrictId()).remove(
 									boundaries.get("" + currSol.getDistrictId()).indexOf(currSol.getPrecinctId()));
+							
+//							neighbors = getNeighbors(currSol, allPrecincts);
+//							for(int i = 0; i < neighbors.size(); i++){
+//								
+//								/* Absolutely monstrosity ... */
+//								/* if boundaries of current precinct we want to move does not contain neighbors and its neighbor district IDs are equal to current precinct
+//								 * district ID, then add these to the boundaries for curr precinct's district ID
+//								 */
+//								if(!boundaries.get("" + currSol.getDistrictId()).contains(this.gs.getPrecinct(neighbors.get(i)).getPrecinctId()) && 
+//									this.gs.getPrecinct(neighbors.get(i)).getDistrictId() != currSol.getDistrictId()){
+//									boundaries.get("" + currSol.getDistrictId()).add(this.gs.getPrecinct(neighbors.get(i)).getPrecinctId());
+//								}
+//							}
+									
 							move = makeMove(currSol, currSol.getDistrictId(), selectedPrecinct.getDistrictId());
 //		                    sendMove(move);
 							
@@ -167,6 +182,12 @@ public class SimulatedAnnealing implements Runnable{
 			                System.out.println(moveCount+" Move Made: " + move.toString());
 							moves.add(move.toString());
 							currCost = newCost;
+						}
+						else
+						{
+							moveCount++;
+							if(move!=null)
+							System.out.println(moveCount+" Move Rejected: " + move.toString());
 						}
 					}
 				}
@@ -293,10 +314,10 @@ public class SimulatedAnnealing implements Runnable{
 			// TODO Auto-generated catch block
 			e.printStackTrace();
 		}
-//		for(Map.Entry<Integer, List> item: boundaries.entrySet()){
-//			System.out.println(item.getValue().size());
-//		}
-//		System.exit(0);
+	}
+	
+	public void useSecondVariantAlgo(){
+		this.useSecondVariant = true;
 	}
 	
 	public List<String> getMoves(){
